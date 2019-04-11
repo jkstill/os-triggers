@@ -25,10 +25,13 @@ stub () {
 
 # actions to perform if triggered
 triggerActions[loadAvg]=loadActions
+triggerActions[oraAAS]=aasActions
 # evaluate if a value exceeds a threshold
 triggerChecks[loadAvg]=loadChk
+triggerChecks[oraAAS]=aasChk
 # return the value to be tested
 triggerTests[loadAvg]=loadTest
+triggerTests[oraAAS]=aasTest
 
 
 #################################
@@ -73,7 +76,55 @@ loadChk () {
 
 loadTest () {
 	declare -n loadVal=$1
-	loadVal=$(cut -f1 -d' ' /proc/loadavg | cut -f1 -d\. )
+	#loadVal=$(cut -f1 -d' ' /proc/loadavg | cut -f1 -d\. )
+	loadVal=$( eval ${runCmds[test]} )
+}
+
+
+#################################
+## oracle AAS  subroutines
+#################################
+
+aasActions () {
+	#stub loadActions	
+
+	for key in ${!runCmds[@]}
+	do
+
+		if [[ ${globals[dryRun]} == true ]]; then
+			echo "DRY RUN: ${runCmds[$key]}"
+		else
+			echo loadActions key: $key
+			eval "${runCmds[$key]}";
+		fi 
+	done
+
+}
+
+aasChk () {
+	declare currLoad=$1
+	# should be numeric
+	#if [[ ! $currLoad =~ /[[:alnum:]]+/ ]]; then
+	if [[ ! $currLoad =~ [\.|0-9]+ ]]; then
+		echo "currload $currLoad not numeric"
+		exit 1
+	fi
+
+	#echo "loadChk: $currLoad"
+
+	if (( $( echo "$currLoad >= ${globals[triggerThreshold]} " | bc ) )); then
+		# load exceeded threshold
+		echo ${globals[boolSuccessRetval]}
+	else
+		echo ${globals[boolFailRetval]}
+	fi
+
+}
+
+aasTest () {
+	declare -n loadVal=$1
+	#loadVal=$(cut -f1 -d' ' /proc/loadavg | cut -f1 -d\. )
+	loadVal=$( eval ${runCmds[test]} )
 }
 
 disableDebug () {
@@ -116,11 +167,17 @@ loadConf () {
 
 	while read line
 	do
-		key=$(echo $line | cut -f1 -d: )
-		cmd=$(echo $line | cut -f2 -d: )
-		echo "loadConf key: $key"
-		echo "loadConf cmd: $cmd"
-		runCmds[$key]="$cmd"
+
+		triggerType=$(echo $line | cut -f1 -d: )
+		key=$(echo $line | cut -f2 -d: )
+		cmd=$(echo $line | cut -f3 -d: )
+
+		if [[ $triggerType == ${globals[triggerType]} ]]; then
+			echo "loadConf key: $key"
+			echo "loadConf cmd: $cmd"
+			runCmds[$key]="$cmd"
+		fi
+
 	done < <(grep -v '^#' ${globals[conf]}) 
 }
 
@@ -140,8 +197,9 @@ cat <<-EOF
     0: run all tests (default)
     1: do not run tests - print the CMDs to be run
 
-  triggerType=[loadAvg|?]
+  triggerType=[loadAvg|oraAAS|?]
     loadAvg: trigger when load average exceed triggerThreshold - defaults to loadAvg
+	 oraAASS: trigger when the value for oracle average active sessions exceeds the triggerThreshold
 
   triggerThreshold=[N|?]
     loadAvg: Action taken when the load average exceeds this value - defaults to 10

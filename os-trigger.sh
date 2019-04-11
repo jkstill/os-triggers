@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-
 # referencing undeclared variables is fatal
 set -u
 
@@ -12,10 +11,12 @@ globals[internalDebug]=''
 globals[boolSuccessRetval]=true
 globals[boolFailRetval]=false
 globals[dryRun]=false
+globals[conf]=~/.os-trigger.conf
 
 declare -A triggerActions
 declare -A triggerChecks
 declare -A triggerTests
+declare -A runCmds
 
 
 stub () {
@@ -35,7 +36,19 @@ triggerTests[loadAvg]=loadTest
 #################################
 
 loadActions () {
-	stub loadActions	
+	#stub loadActions	
+
+	for key in ${!runCmds[@]}
+	do
+
+		if [[ ${globals[dryRun]} == true ]]; then
+			echo "DRY RUN: ${runCmds[$key]}"
+		else
+			echo loadActions key: $key
+			eval "${runCmds[$key]}";
+		fi 
+	done
+
 }
 
 loadChk () {
@@ -99,6 +112,18 @@ printDebug () {
 	fi
 }
 
+loadConf () {
+
+	while read line
+	do
+		key=$(echo $line | cut -f1 -d: )
+		cmd=$(echo $line | cut -f2 -d: )
+		echo "loadConf key: $key"
+		echo "loadConf cmd: $cmd"
+		runCmds[$key]="$cmd"
+	done < <(grep -v '^#' ${globals[conf]}) 
+}
+
 help () {
 
 	 basename $0
@@ -142,12 +167,21 @@ declare debug=${debug:-0}
 setDebug $debug
 
 declare dryRun=${dryRun:-0}
-globals[dryRun]=${dryRun}
+if [[ $dryRun -eq 0 ]]; then
+	globals[dryRun]=${globals[boolFailRetval]}
+else
+	globals[dryRun]=${globals[boolSuccessRetval]}
+fi
 
 globals[triggerType]=${triggerType:-loadAvg}
 globals[triggerThreshold]=${triggerThreshold:-10}
 globals[iterations]=${iteration:-100}
+# exit after this many triggering events
+globals[maxTriggerEvents]=${maxTriggerEvents:-5}
 globals[interval]=${interval:-10}
+
+loadConf
+#exit
 
 # debug tests configured for loadAvg
 if [[ $( getDebug ) == true ]]; then
@@ -175,10 +209,18 @@ Total runtime is approximately $totalRuntime seconds
 EOF
 
 declare currTriggerVal
+declare triggerEventCount=0
 declare currentIteration=0
 
 while [[ $currentIteration -lt ${globals[iterations]} ]] 
 do
+
+	if (( triggerEventCount >= globals[maxTriggerEvents] )); then
+		echo 
+		echo Max Triggering Events of ${globals[maxTriggerEvents] } reached - exiting
+		echo
+		exit 0
+	fi
 
 	${triggerTests[${globals[triggerType]}]} currTriggerVal
 	echo "Trigger Val: $currTriggerVal"
@@ -189,6 +231,7 @@ do
 		echo "Trigger Threshold: ${globals[triggerThreshold]}"
 		echo "Trigger Value of $currTriggerVal is excessive"
 		${triggerActions[${globals[triggerType]}]} 
+		(( triggerEventCount++ ))
 	fi
 
 	echo current interation: $currentIteration
@@ -197,12 +240,6 @@ do
 	sleep  ${globals[interval]}
 
 done
-
-
-
-
-
-
 
 
 

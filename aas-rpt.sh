@@ -4,7 +4,7 @@ export PATH=/usr/local/bin:$PATH
 . /usr/local/bin/oraenv <<< c12 >/dev/null
 
 sqlplus -s /nolog <<-EOF
-connect sys/grok@js122a as sysdba
+connect /@js122a as sysdba
 
 set pause off
 set echo off

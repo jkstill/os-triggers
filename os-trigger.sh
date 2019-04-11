@@ -11,11 +11,15 @@ globals[internalDebug]=''
 globals[boolSuccessRetval]=true
 globals[boolFailRetval]=false
 globals[dryRun]=false
-globals[conf]=~/.os-trigger.conf
+#globals[conf]=~/.os-trigger.conf
+globals[conf]=./.os-trigger.conf
 
+declare -a triggerValidCompType=(int chr)
 declare -A triggerActions
 declare -A triggerChecks
 declare -A triggerTests
+declare -A runCompType
+declare -A runCompVal
 declare -A runCmds
 
 
@@ -24,21 +28,21 @@ stub () {
 }
 
 # actions to perform if triggered
-triggerActions[loadAvg]=loadActions
-triggerActions[oraAAS]=aasActions
+triggerActions[int]=intActions
+triggerActions[chr]=chrActions
 # evaluate if a value exceeds a threshold
-triggerChecks[loadAvg]=loadChk
-triggerChecks[oraAAS]=aasChk
+triggerChecks[int]=intChk
+triggerChecks[chr]=chrChk
 # return the value to be tested
-triggerTests[loadAvg]=loadTest
-triggerTests[oraAAS]=aasTest
+triggerTests[int]=intTest
+triggerTests[chr]=chrTest
 
 
 #################################
-## load average subroutines
+## intger subroutines
 #################################
 
-loadActions () {
+intActions () {
 	#stub loadActions	
 
 	for key in ${!runCmds[@]}
@@ -54,18 +58,18 @@ loadActions () {
 
 }
 
-loadChk () {
-	declare currLoad=$1
+intChk () {
+	declare val2chk=$1
 	# should be numeric
 	#if [[ ! $currLoad =~ /[[:alnum:]]+/ ]]; then
-	if [[ ! $currLoad =~ [\.|0-9]+ ]]; then
-		echo "currload $currLoad not numeric"
+	if [[ ! $val2chk =~ [\.|0-9]+ ]]; then
+		echo "val2chk $val2chk not numeric"
 		exit 1
 	fi
 
 	#echo "loadChk: $currLoad"
 
-	if (( $( echo "$currLoad >= ${globals[triggerThreshold]} " | bc ) )); then
+	if (( $( echo "$val2chk >= ${globals[triggerThreshold]} " | bc ) )); then
 		# load exceeded threshold
 		echo ${globals[boolSuccessRetval]}
 	else
@@ -74,10 +78,10 @@ loadChk () {
 
 }
 
-loadTest () {
-	declare -n loadVal=$1
+intTest () {
+	declare -n retVal=$1
 	#loadVal=$(cut -f1 -d' ' /proc/loadavg | cut -f1 -d\. )
-	loadVal=$( eval ${runCmds[test]} )
+	retVal=$( eval ${runCmds[test]} )
 }
 
 
@@ -85,7 +89,7 @@ loadTest () {
 ## oracle AAS  subroutines
 #################################
 
-aasActions () {
+chrActions () {
 	#stub loadActions	
 
 	for key in ${!runCmds[@]}
@@ -101,18 +105,13 @@ aasActions () {
 
 }
 
-aasChk () {
-	declare currLoad=$1
-	# should be numeric
-	#if [[ ! $currLoad =~ /[[:alnum:]]+/ ]]; then
-	if [[ ! $currLoad =~ [\.|0-9]+ ]]; then
-		echo "currload $currLoad not numeric"
-		exit 1
-	fi
+chrChk () {
+	declare val2chk=$1
 
-	#echo "loadChk: $currLoad"
+	# not checking type of input - can be anything
 
-	if (( $( echo "$currLoad >= ${globals[triggerThreshold]} " | bc ) )); then
+	# in this case the threshold is a regex to compare	
+	if (( $( echo "$val2chk >= ${globals[triggerThreshold]} " | bc ) )); then
 		# load exceeded threshold
 		echo ${globals[boolSuccessRetval]}
 	else
@@ -121,7 +120,7 @@ aasChk () {
 
 }
 
-aasTest () {
+chrTest () {
 	declare -n loadVal=$1
 	#loadVal=$(cut -f1 -d' ' /proc/loadavg | cut -f1 -d\. )
 	loadVal=$( eval ${runCmds[test]} )
@@ -163,22 +162,92 @@ printDebug () {
 	fi
 }
 
+: << 'COMMENT'
+declare -A runCompType
+declare -A runCompVal
+COMMENT
+
+validateType () {
+	declare val2chk=$1
+	# either of these will work
+	printf -- '%s\n' "${triggerValidCompType[@]}" | grep "^$val2chk$" >/dev/null
+	#echo "${triggerValidCompType[@]}" | perl -ne 'print join("\n",split(/\s+/,$_))' > /dev/null
+	return $?
+}
+
+chk4Test () {
+	printf -- '%s\n' "${!runCmds[@]}" | grep "^test$" >/dev/null
+	return $?
+}
+
+
 loadConf () {
+
+	declare triggerClass
+	declare testName
+	declare compType
+	declare compVal
+	declare cmd
 
 	while read line
 	do
 
-		triggerType=$(echo $line | cut -f1 -d: )
-		key=$(echo $line | cut -f2 -d: )
-		cmd=$(echo $line | cut -f3 -d: )
+		triggerClass=$(echo $line | cut -f1 -d: )
+		testName=$(echo $line | cut -f2 -d: )
+		compType=$(echo $line | cut -f3 -d: )
+		compVal=$(echo $line | cut -f4 -d: )
+		cmd=$(echo $line | cut -f5 -d: )
 
-		if [[ $triggerType == ${globals[triggerType]} ]]; then
-			echo "loadConf key: $key"
-			echo "loadConf cmd: $cmd"
-			runCmds[$key]="$cmd"
+		if [[ $testName == 'test' ]]; then 
+			if [[ -z $compVal ]]; then
+				echo
+				echo "line: $line"
+				echo 
+				echo Test lines must have a comparison value 
+				echo
+				exit 1
+			else
+				globals[triggerThreshold]=$compVal
+			fi
+		fi
+
+		if ! validateType $compType  ; then
+			echo
+			echo "line: $line"
+			echo 
+			echo "Comparision type of '$compType' is not valid"
+			echo
+			echo "Valid Types:"
+			printf -- '%s\n' "${triggerValidCompType[@]}" 
+			echo
+			exit 1
+		fi
+
+		if [[ $triggerClass == ${globals[triggerClass]} ]]; then
+			echo "loadConf  triggerClass: $triggerClass"
+			echo "loadConf      testName: $testName"
+			echo "loadConf      compType: $compType"
+			echo "loadConf      compVal:  $compVal"
+			echo "loadConf           cmd: $cmd"
+			echo
+
+			runCmds[$testName]="$cmd"
+			runCompType[$testName]="$compType"
+			runCompVal[$testName]="$compVal"
+
+
 		fi
 
 	done < <(grep -v '^#' ${globals[conf]}) 
+
+	if ! chk4Test; then
+		echo
+		echo "No test named 'test' found"
+		echo "Each group of checks must have a 'test'"
+		echo
+		exit 1
+	fi
+
 }
 
 help () {
@@ -197,7 +266,7 @@ cat <<-EOF
     0: run all tests (default)
     1: do not run tests - print the CMDs to be run
 
-  triggerType=[loadAvg|oraAAS|?]
+  triggerClass=[loadAvg|oraAAS|?]
     loadAvg: trigger when load average exceed triggerThreshold - defaults to loadAvg
 	 oraAASS: trigger when the value for oracle average active sessions exceeds the triggerThreshold
 
@@ -231,8 +300,8 @@ else
 	globals[dryRun]=${globals[boolSuccessRetval]}
 fi
 
-globals[triggerType]=${triggerType:-loadAvg}
-globals[triggerThreshold]=${triggerThreshold:-10}
+globals[triggerClass]=${triggerClass:-loadAvg}
+
 globals[iterations]=${iteration:-100}
 # exit after this many triggering events
 globals[maxTriggerEvents]=${maxTriggerEvents:-5}
@@ -240,6 +309,17 @@ globals[interval]=${interval:-10}
 
 loadConf
 #exit
+
+# override threshold from CLI
+if [[ -n $triggerThreshold ]]; then
+	globals[triggerThreshold]=$triggerThreshold
+fi
+
+# override threshold from CLI
+if [[ -n $triggerThreshold ]]; then
+	globals[triggerThreshold]=$triggerThreshold
+fi
+
 
 # debug tests configured for loadAvg
 if [[ $( getDebug ) == true ]]; then
@@ -270,6 +350,12 @@ declare currTriggerVal
 declare triggerEventCount=0
 declare currentIteration=0
 
+echo Triggers: ${!triggerActions[@]}
+echo Triggers: ${triggerActions[@]}
+
+echo runCompType: ${!runCompType[@]}
+echo runCompType: ${runCompType[@]}
+
 while [[ $currentIteration -lt ${globals[iterations]} ]] 
 do
 
@@ -280,15 +366,23 @@ do
 		exit 0
 	fi
 
-	${triggerTests[${globals[triggerType]}]} currTriggerVal
+	#${triggerTests[${globals[triggerClass]}]} currTriggerVal
+	echo class: ${globals[triggerClass]}
+	echo type: ${runCompType[test]}
+
+	${triggerTests[${runCompType[test]}]} currTriggerVal
+
+	#${globals[triggerClass]}
+			
 	echo "Trigger Val: $currTriggerVal"
 
 	#if [[ $(loadChk 22.3) == true ]]; then
-	if [[ $(${triggerChecks[${globals[triggerType]}]} $currTriggerVal ) == true ]]; then
-		echo "     Trigger Type: ${globals[triggerType]}"
+	if [[ $(${triggerChecks[${runCompType[test]}]} $currTriggerVal ) == true ]]; then
+		echo "     Trigger Type: ${globals[triggerClass]}"
 		echo "Trigger Threshold: ${globals[triggerThreshold]}"
 		echo "Trigger Value of $currTriggerVal is excessive"
-		${triggerActions[${globals[triggerType]}]} 
+		#${triggerActions[${globals[triggerClass]}]} 
+		${triggerActions[${runCompType[test]}]} 
 		(( triggerEventCount++ ))
 	fi
 
@@ -298,6 +392,5 @@ do
 	sleep  ${globals[interval]}
 
 done
-
 
 

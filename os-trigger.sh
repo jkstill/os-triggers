@@ -11,8 +11,20 @@ globals[internalDebug]=''
 globals[boolSuccessRetval]=true
 globals[boolFailRetval]=false
 globals[dryRun]=false
-#globals[conf]=~/.os-trigger.conf
-globals[conf]=./.os-trigger.conf
+
+
+globals[conf]='';
+
+# load config file
+# current directory takes precedence
+declare confFileName='.os-trigger.conf'
+
+for dir in ~/ ./
+do
+	[[ -f ${dir}${confFileName} ]] && { globals[conf]=${dir}${confFileName}; }
+done
+
+echo "using configuration file: ${globals[conf]}"
 
 declare -a triggerValidCompType=(int chr)
 declare -A triggerActions

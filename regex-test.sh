@@ -7,14 +7,8 @@ sqlplus -s /nolog <<-EOF
 connect /@js122a as sysdba
 set feed off term on pagesize 0 linesize 200
 
--- test query
---select 100 from dual;
-
--- the real query
-select trunc(value) value
-from v\$sysmetric  
-where metric_name = 'Average Active Sessions'
-and intsize_csec > 5000;
+select decode( mod(to_char(sysdate,'SS'),2), 1, 'PASS', 'FAIL') 
+from dual;
 
 exit
 EOF

@@ -92,10 +92,25 @@ intChk () {
 
 }
 
+: << 'WORKAROUND'
+
+There are still many systems with Bash that is too old to have 'declare -n'
+
+So using a workaround with 'print -v'
+
+WORKAROUND
+
 intTest () {
-	declare -n retVal=$1
+
+	#declare -n retVal=$1
+	#retVal=$( eval ${runCmds[test]} )
+
+	# example of code that is executed
 	#loadVal=$(cut -f1 -d' ' /proc/loadavg | cut -f1 -d\. )
-	retVal=$( eval ${runCmds[test]} )
+
+	declare varname=$1
+	declare retVal=$( eval ${runCmds[test]} )
+	printf -v "$varname" "%d" "$retVal"
 }
 
 
@@ -141,9 +156,17 @@ chrChk () {
 }
 
 chrTest () {
-	declare -n loadVal=$1
+
+	# search for 'WORKAROUND' comments
+	#declare -n loadVal=$1
+	#loadVal=$( eval ${runCmds[test]} )
+
+	# example of command that might be run
 	#loadVal=$(cut -f1 -d' ' /proc/loadavg | cut -f1 -d\. )
-	loadVal=$( eval ${runCmds[test]} )
+
+	declare varname=$1
+	declare loadVal=$( eval ${runCmds[test]} )
+	printf -v "$varname" "%d" "$loadVal"
 }
 
 disableDebug () {
